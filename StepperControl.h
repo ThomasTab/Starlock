@@ -20,7 +20,7 @@ public:
     // return true if the motor is at the target position.
     boolean run();
 
-    // Start function. Direction is implicit in the sign of _direction
+    // Start function. Direction is set using the sign of _direction
     // (>0 is clockwise, <0 is counterclockwise).
     void start(int _direction);
 

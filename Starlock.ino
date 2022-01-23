@@ -4,7 +4,7 @@
  Author:	Thomas Tabuteau
 */
 
-// Rotary Encoder Inputs
+#include "StepperControl.h"
 #include <ESPRotary.h>
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
@@ -22,6 +22,13 @@
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define SCREEN_ADDRESS 0x3C
 #define OLED_RESET -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+
+// Stepper parameters
+#define STEPS_PER_REVOLUTION 47
+#define A1 9
+#define A2 10
+#define B1 11
+#define B2 12
 
 // Global variables
 const unsigned char PROGMEM splash[] = {
@@ -90,17 +97,18 @@ const unsigned char PROGMEM splash[] = {
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
-
+float speedMultiplier = 1;
+int direction = 1;
+int state = 0;
 ESPRotary r;
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
-int state = 0;
+StepperControl stepper(A1, A2, B1, B2, STEPS_PER_REVOLUTION, speedMultiplier);
 
 void setup() {
     Serial.begin(9600);
 
     // Setup rotary encoder
     r.begin(DT, CLK, 4);
-    r.setChangedHandler(rotate);
     r.setLeftRotationHandler(showDirection);
     r.setRightRotationHandler(showDirection);
     attachInterrupt(digitalPinToInterrupt(CLK), interruptHandler, CHANGE);
@@ -120,13 +128,14 @@ void setup() {
 
     // Display splashscreen
     display.clearDisplay();
-    display.drawBitmap(0,0,splash,128,64,WHITE);
+    display.drawBitmap(0, 0, splash, 128, 64, WHITE);
     display.setTextSize(1);
     display.setTextColor(WHITE);
     display.setCursor(43, 40);
     display.print("Ver. 0.1");
     display.display();
     delay(2000);
+    stepper.start(1);
 }
 
 // on rotary encoder state change trigger analyze
@@ -134,29 +143,39 @@ void interruptHandler() {
     r.loop();
 }
 
-// on rotary encoder position change
-void rotate(ESPRotary& r) {
+// on rotary encoder rotation
+void showDirection(ESPRotary& r) {
+    switch (r.getDirection()) {
+    case RE_RIGHT:
+        if (speedMultiplier < 8192) {
+            speedMultiplier += 2;
+        }
+        break;
+    case RE_LEFT:
+        if (speedMultiplier > (0.125)) {
+            speedMultiplier -= 2;
+        }
+        break;
+    }
     state = 0;
 }
 
-// on rotary encoder rotation
-void showDirection(ESPRotary& r) {
-}
-
 // handle pin change interrupt for switch
-ISR(PCINT2_vect) 
+ISR(PCINT2_vect)
 {
-    // If switch is pressed set state to 1 to display string "SW"
-    // Else set it to 0 to display rotary position
-    if (!digitalRead(SW)) {
+    // Debounce switch
+    static unsigned long last_interrupt_time = 0;
+    unsigned long interrupt_time = millis();
+    if (digitalRead(SW) && (interrupt_time - last_interrupt_time > 200)) {
+        // Rotate between -1, 0 and 1 in succession each button press
+        direction = ((direction + 2) % 3) - 1;
         state = 1;
     }
-    else {
-        state = 0;
-    }
+    last_interrupt_time = interrupt_time;
 }
 
 void loop() {
+    stepper.run();
     if (DEBUG_STATE_MACHINE) {
         Serial.print("Current state : " + String(state));
     }
@@ -164,8 +183,8 @@ void loop() {
     /*
     * State Machine
     * ###############
-    * State 0 : Display current position
-    * State 1 : Display text "SW"
+    * State 0 : Display current speed multiplier -> default
+    * State 1 : Change direction -> 0
     * Default : Don't change display
     * ###############
     * After having displayed the necessary info
@@ -175,24 +194,20 @@ void loop() {
     * hardware interrupt) change the state
     */
     switch (state) {
-        case 0:
-            display.clearDisplay();
-            display.setTextSize(7);
-            display.setTextColor(WHITE);
-            display.setCursor(0, 0);
-            display.print(r.getPosition());
-            display.display();
-            state = -1;
-            break;
-        case 1:
-            display.clearDisplay();
-            display.setTextSize(7);
-            display.setTextColor(WHITE);
-            display.setCursor(0, 0);
-            display.print("SW");
-            display.display();
-            state = -1;
-            break;
+    case 0:
+        display.clearDisplay();
+        display.setTextSize(3);
+        display.setTextColor(WHITE);
+        display.setCursor(0, 0);
+        display.print("x" + String(speedMultiplier * direction));
+        display.display();
+        stepper.setSpeed(speedMultiplier);
+        state = -1;
+        break;
+    case 1:
+        stepper.start(direction);
+        state = 0;
+        break;
     }
 
     if (DEBUG_STATE_MACHINE) {
