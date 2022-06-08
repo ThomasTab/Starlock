@@ -4,10 +4,10 @@
  Author:	Thomas Tabuteau
 */
 
-#include "StepperControl.h"
-#include <ESPRotary.h>
+#include "src/StepperControl/StepperControl.h"
+#include "src/ESPRotary/ESPRotary.h"
 #include <Wire.h>
-#include <Adafruit_SSD1306.h>
+#include "src/Adafruit_GFX/Adafruit_SSD1306.h"
 
 // Debugging
 #define DEBUG_STATE_MACHINE false
@@ -106,6 +106,9 @@ StepperControl stepper(A1, A2, B1, B2, STEPS_PER_REVOLUTION, speedMultiplier);
 
 void setup() {
     Serial.begin(9600);
+
+    // Setup toggle
+    pinMode(12, INPUT_PULLUP);
 
     // Setup rotary encoder
     r.begin(DT, CLK, 4);
